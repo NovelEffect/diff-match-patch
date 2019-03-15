@@ -489,10 +489,76 @@ diff_match_patch.prototype.diff_linesToChars_ = function(text1, text2) {
   return {chars1: chars1, chars2: chars2, lineArray: lineArray};
 };
 
+/* ********************************************************************** */
+
+/**
+ * Split two texts into an array of strings.  Reduce the texts to a string of
+ * hashes where each Unicode character represents one word.
+ * Following instructions from
+ *    https://github.com/google/diff-match-patch/wiki/Line-or-Word-Diffs
+ * @param {string} text1 First string.
+ * @param {string} text2 Second string.
+ * @return {{chars1: string, chars2: string, wordArray: !Array.<string>}}
+ *     An object containing the encoded text1, the encoded text2 and
+ *     the array of unique strings.
+ *     The zeroth element of the array of unique strings is intentionally blank.
+ * @private
+ */
+diff_match_patch.prototype.diff_wordsToChars_ = function(text1, text2) {
+  var wordArray = [];  // e.g. wordArray[4] == 'Hello '
+  var wordHash = {};   // e.g. wordHash['Hello '] == 4
+
+  // '\x00' is a valid character, but various debuggers don't like it.
+  // So we'll insert a junk entry to avoid generating a null character.
+  wordArray[0] = '';
+
+  /**
+   * Split a text into an array of strings.  Reduce the texts to a string of
+   * hashes where each Unicode character represents one line.
+   * Modifies wordarray and wordhash through being a closure.
+   * @param {string} text String to encode.
+   * @return {string} Encoded string.
+   * @private
+   */
+  function diff_wordsToCharsMunge_(text) {
+    var chars = '';
+    // Walk the text, pulling out a substring for each word.
+    // text.split(' ') would would temporarily double our memory footprint.
+    // Modifying text would create many large strings to garbage collect.
+    var wordStart = 0;
+    var wordEnd = -1;
+    // Keeping our own length variable is faster than looking it up.
+    var wordArrayLength = wordArray.length;
+    while (wordEnd < text.length - 1) {
+      wordEnd = text.indexOf(' ', wordStart);
+      if (wordEnd == -1) {
+        wordEnd = text.length - 1;
+      }
+      var word = text.substring(wordStart, wordEnd + 1);
+      wordStart = wordEnd + 1;
+
+      if (wordHash.hasOwnProperty ? wordHash.hasOwnProperty(word) :
+          (wordHash[word] !== undefined)) {
+        chars += String.fromCharCode(wordHash[word]);
+      } else {
+        chars += String.fromCharCode(wordArrayLength);
+        wordHash[word] = wordArrayLength;
+        wordArray[wordArrayLength++] = word;
+      }
+    }
+    return chars;
+  }
+
+  var chars1 = diff_wordsToCharsMunge_(text1);
+  var chars2 = diff_wordsToCharsMunge_(text2);
+  return {chars1: chars1, chars2: chars2, wordArray: wordArray};
+};
+
+/* ********************************************************************** */
 
 /**
  * Rehydrate the text in a diff from a string of line hashes to real lines of
- * text.
+ * text. Also works to rehydrate a wordArray into its original text.
  * @param {!Array.<!diff_match_patch.Diff>} diffs Array of diff tuples.
  * @param {!Array.<string>} lineArray Array of unique strings.
  * @private
